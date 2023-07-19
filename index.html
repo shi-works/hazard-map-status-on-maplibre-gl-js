@@ -1,0 +1,484 @@
+<html>
+
+<head>
+    <title>ハザードマップ掲載状況（PMTiles）</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src='https://unpkg.com/maplibre-gl@3.0.1/dist/maplibre-gl.js'></script>
+    <link href='https://unpkg.com/maplibre-gl@3.0.1/dist/maplibre-gl.css' rel='stylesheet' />
+    <script src="https://unpkg.com/pmtiles@2.7.0/dist/index.js"></script>
+    <link href="maplibre-gl-compare.css" rel='stylesheet' />
+    <script src="maplibre-gl-compare.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+        }
+    </style>
+</head>
+
+<body>
+    <style>
+        body {
+            overflow: hidden;
+        }
+
+        body * {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
+        .map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+        }
+
+        .map-overlay {
+            font: bold 12px/20px 'Helvetica Neue', Arial, Helvetica, sans-serif;
+            position: absolute;
+            width: 220px;
+            bottom: 20px;
+            left: 0;
+            padding: 10px;
+        }
+
+        .map-overlay .map-overlay-inner {
+            background-color: #fff;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+            border-radius: 3px;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+
+        .map-overlay label {
+            display: block;
+            margin: 0 0 0px;
+            font-size: 12px;
+            top: 100px;
+            left: 10px;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .map-overlay input {
+            background-color: transparent;
+            display: inline-block;
+            width: 100%;
+            position: relative;
+            margin: 0;
+            cursor: ew-resize;
+        }
+
+        .corner-text {
+            position: fixed;
+            top: 0;
+            padding: 10px;
+            font-size: 14px;
+            z-index: 1;
+            /* put text above other elements */
+            color: white;
+            /* make sure text is visible on top of other elements */
+            background-color: rgba(0, 0, 0, 0.5);
+            /* semi-transparent background for better visibility */
+        }
+
+        #left-corner {
+            left: 0;
+        }
+
+        #right-corner {
+            right: 0;
+        }
+
+        .legend {
+            background-color: #fff;
+            border-radius: 3px;
+            bottom: 50px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.10);
+            font: 12px/14px 'Helvetica Neue', Arial, Helvetica, sans-serif;
+            padding: 10px;
+            position: absolute;
+            right: 10px;
+            z-index: 1;
+            line-height: 10px;
+            height: auto;
+        }
+
+        .legend h4 {
+            margin: 0 0 10px;
+        }
+
+        .legend div span {
+            border-radius: 50%;
+            display: inline-block;
+            height: 15px;
+            margin-right: 10px;
+            width: 15px;
+            color: orangered
+        }
+    </style>
+    <div id="comparison-container">
+        <div id="left-corner" class="corner-text">洪水ハザードマップ掲載状況</div>
+        <div id="right-corner" class="corner-text">内水ハザードマップ掲載状況</div>
+        <div id="before" class="map"></div>
+        <div id="after" class="map"></div>
+    </div>
+    <div id='legend' class='legend'>
+        <div class="square"
+            style='background-color: rgba(0, 101, 203, 0.7); display: inline-block; width: 15px; height: 15px;'></div>
+        <span style="display: inline-block; margin-left: 5px;">ハザードマップ掲載状況</span><br>
+    </div>
+    <!--
+    <div class="map-overlay top">
+        <div class="map-overlay-inner">
+            <label>衛星画像(COG) 不透明度: <span id="slider-opacity-value">100%</span></label>
+            <input id="slider-opacity" type="range" min="0" max="100" step="0" value="100">
+        </div>
+    </div>
+    -->
+    <script type="text/javascript">
+        // add the PMTiles plugin to the maplibregl global.
+        let protocol = new pmtiles.Protocol();
+        maplibregl.addProtocol("pmtiles", protocol.tile);
+
+        // 洪水ハザードマップ掲載状況
+        let PM_Kouzui_URL = "https://xs489works.xsrv.jp/pmtiles-data/hazardmap/N03-23_230101_add_1_checkflg.pmtiles";
+
+        // 内水ハザードマップ掲載状況
+        let PM_Naisui_URL = "https://xs489works.xsrv.jp/pmtiles-data/hazardmap/N03-23_230101_add_2_checkflg.pmtiles";
+
+        const p1 = new pmtiles.PMTiles(PM_Kouzui_URL)
+        const p2 = new pmtiles.PMTiles(PM_Naisui_URL)
+
+        protocol.add(p1);
+        protocol.add(p2);
+
+        // マップを初期化
+        const beforeMap = new maplibregl.Map({
+            container: 'before',
+            style: 'https://tile2.openstreetmap.jp/styles/osm-bright/style.json',
+            hash: true,
+            zoom: 4.65,
+            center: [138.48, 37.31],
+            pitch: 0,
+            bearing: 0,
+            attributionControl: false,
+        });
+
+        beforeMap.on('load', () => {
+            // 洪水ハザードマップ掲載状況ベクトルタイル（ポリゴン）
+            beforeMap.addSource("pmtiles-kouzui", {
+                type: "vector",
+                url: "pmtiles://" + PM_Kouzui_URL,
+                attribution: '<a href="https://disaportal.gsi.go.jp/hazardmapportal/hazardmap/copyright/opendata.html#wagamachi">ハザードマップポータルサイト 「わがまちハザードマップ」のリンク先情報（最終更新日2023年06月22日）を加工して作成</a>',
+                generateId: true
+            });
+
+            // 洪水ハザードマップ掲載状況ポリゴンレイヤ
+            beforeMap.addLayer({
+                "id": "kouzui-fill",
+                "type": "fill",
+                "source": "pmtiles-kouzui",
+                "source-layer": "N0323_230101_add_1_checkflgfgb",
+                minzoom: 1,
+                maxzoom: 23,
+                'paint': {
+                    'fill-color': [
+                        'case',
+                        ['boolean', ['feature-state', 'hover'], false],
+                        'rgba(255, 0, 0, 1)', // ホバー時の色
+                        [
+                            'match',
+                            ['get', 'CheckFlg'],
+                            'True', 'rgba(0, 101, 203, 1)',  // ChecFlgがtrueの場合は青色
+                            'False', 'rgba(255, 0, 0, 0)',  // ChecFlgがfalseの場合は透明な赤色
+                            'rgba(0, 0, 0, 1)'  // それ以外の場合は黒色（あるいは任意の色）
+                        ]
+                    ],
+                    'fill-opacity': 0.7,
+                }
+            });
+
+            // hover stateを初期化
+            var hoveredStateId_k = null;
+
+            // mousemoveイベント
+            beforeMap.on('mousemove', 'kouzui-fill', function (e) {
+                if (e.features.length > 0) {
+                    if (hoveredStateId_k) {
+                        beforeMap.setFeatureState(
+                            { source: 'pmtiles-kouzui', sourceLayer: 'N0323_230101_add_1_checkflgfgb', id: hoveredStateId_k },
+                            { hover: false }
+                        );
+                    }
+                    hoveredStateId_k = e.features[0].id;
+                    beforeMap.setFeatureState(
+                        { source: 'pmtiles-kouzui', sourceLayer: 'N0323_230101_add_1_checkflgfgb', id: hoveredStateId_k },
+                        { hover: true }
+                    );
+                }
+            });
+
+            // mouseleaveイベント
+            beforeMap.on('mouseleave', 'kouzui-fill', function () {
+                if (hoveredStateId_k) {
+                    beforeMap.setFeatureState(
+                        { source: 'pmtiles-kouzui', sourceLayer: 'N0323_230101_add_1_checkflgfgb', id: hoveredStateId_k },
+                        { hover: false }
+                    );
+                }
+                hoveredStateId_k = null;
+            });
+
+            // 洪水ハザードマップ掲載状況ラインレイヤ
+            beforeMap.addLayer({
+                "id": "kouzui-line",
+                "type": "line",
+                "source": "pmtiles-kouzui",
+                "source-layer": "N0323_230101_add_1_checkflgfgb",
+                minzoom: 1,
+                maxzoom: 23,
+                'paint': {
+                    'line-color': 'rgba(0, 48, 96, 1)',
+                    'line-width': 1,
+                }
+            });
+
+            // 洪水ハザードマップ掲載状況ラベルレイヤ
+            beforeMap.addLayer({
+                'id': 'kouzui-label',
+                'type': 'symbol',
+                "source": "pmtiles-kouzui",
+                "source-layer": "N0323_230101_add_1_checkflgfgb",
+                minzoom: 8,
+                maxzoom: 23,
+                'layout': {
+                    'text-field': ['get', 'N03_004'],
+                    'text-offset': [0, -0.6],
+                    'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+                    'text-size': 10,
+                    'text-anchor': 'top',
+                    'symbol-placement': 'point',
+                    'text-allow-overlap': false,
+                    'symbol-spacing': 1000
+                },
+                'paint': {
+                    'text-color': 'rgba(0, 0, 0, 1)',
+                    'text-halo-blur': 1,
+                    'text-halo-color': 'rgba(255, 255, 255, 1)',
+                    'text-halo-width': 2
+                }
+            });
+
+        });
+
+        // 洪水ハザードマップ掲載状況ポップアップ表示
+        beforeMap.on('click', 'kouzui-fill', (e) => {
+            var cityname = e.features[0].properties['N03_004'];
+            var checkflg = e.features[0].properties['CheckFlg'];
+            var url = e.features[0].properties['掲載するURL'];
+
+            var linkHTML = (checkflg === 'True') ?
+                '<div><a href="' + url + '" target="_blank">リンクを開く</a></div>' :
+                '<div>-</div>';
+
+            new maplibregl.Popup()
+                .setLngLat(e.lngLat)
+                .setHTML(
+                    '<div style="font-size: 1.1em; color: black;"><strong>' + cityname + '</strong></div>' +
+                    '<div>' + '洪水ハザードマップ' + '</div>' +
+                    linkHTML
+                )
+                .addTo(beforeMap);
+        });
+
+        // スケール表示
+        beforeMap.addControl(new maplibregl.ScaleControl({
+            maxWidth: 200,
+            unit: 'metric'
+        }));
+
+        // フルスクリーンモードのオンオフ
+        beforeMap.addControl(new maplibregl.FullscreenControl(), 'bottom-left');
+
+        // 現在位置表示
+        beforeMap.addControl(new maplibregl.GeolocateControl({
+            positionOptions: {
+                enableHighAccuracy: false
+            },
+            fitBoundsOptions: { maxZoom: 18 },
+            trackUserLocation: true,
+            showUserLocation: true
+        }), 'bottom-left');
+
+        // ズーム・回転
+        beforeMap.addControl(new maplibregl.NavigationControl(), 'bottom-left');
+
+        // マップを初期化
+        const afterMap = new maplibregl.Map({
+            container: 'after',
+            style: 'https://tile2.openstreetmap.jp/styles/osm-bright/style.json',
+            hash: true,
+            zoom: 4.65,
+            center: [138.48, 37.31],
+            pitch: 0,
+            bearing: 0,
+            attributionControl: false,
+        });
+
+        afterMap.on('load', () => {
+            // 内水ハザードマップ掲載状況ベクトルタイル（ポリゴン）
+            afterMap.addSource("pmtiles-naisui", {
+                type: "vector",
+                url: "pmtiles://" + PM_Naisui_URL,
+                attribution: '<a href="https://disaportal.gsi.go.jp/hazardmapportal/hazardmap/copyright/opendata.html#wagamachi">ハザードマップポータルサイト 「わがまちハザードマップ」のリンク先情報（最終更新日2023年06月22日）を加工して作成</a>',
+                generateId: true
+            });
+
+            // 内水ハザードマップ掲載状況ポリゴンレイヤ
+            afterMap.addLayer({
+                "id": "naisui-fill",
+                "type": "fill",
+                "source": "pmtiles-naisui",
+                "source-layer": "N0323_230101_add_2_checkflgfgb",
+                minzoom: 1,
+                maxzoom: 23,
+                'paint': {
+                    'fill-color': [
+                        'case',
+                        ['boolean', ['feature-state', 'hover'], false],
+                        'rgba(255, 0, 0, 1)', // ホバー時の色
+                        [
+                            'match',
+                            ['get', 'CheckFlg'],
+                            'True', 'rgba(0, 101, 203, 1)',  // ChecFlgがtrueの場合は青色
+                            'False', 'rgba(255, 0, 0, 0)',  // ChecFlgがfalseの場合は透明な赤色
+                            'rgba(0, 0, 0, 1)'  // それ以外の場合は黒色（あるいは任意の色）
+                        ]
+                    ],
+                    'fill-opacity': 0.7,
+                }
+            });
+
+            // hover stateを初期化
+            var hoveredStateId_n = null;
+
+            // mousemoveイベント
+            afterMap.on('mousemove', 'naisui-fill', function (e) {
+                if (e.features.length > 0) {
+                    if (hoveredStateId_n) {
+                        afterMap.setFeatureState(
+                            { source: 'pmtiles-naisui', sourceLayer: 'N0323_230101_add_2_checkflgfgb', id: hoveredStateId_n },
+                            { hover: false }
+                        );
+                    }
+                    hoveredStateId_n = e.features[0].id;
+                    afterMap.setFeatureState(
+                        { source: 'pmtiles-naisui', sourceLayer: 'N0323_230101_add_2_checkflgfgb', id: hoveredStateId_n },
+                        { hover: true }
+                    );
+                }
+            });
+
+            // mouseleaveイベント
+            afterMap.on('mouseleave', 'naisui-fill', function () {
+                if (hoveredStateId_n) {
+                    afterMap.setFeatureState(
+                        { source: 'pmtiles-naisui', sourceLayer: 'N0323_230101_add_2_checkflgfgb', id: hoveredStateId_n },
+                        { hover: false }
+                    );
+                }
+                hoveredStateId_n = null;
+            });
+
+
+            // 内水ハザードマップ掲載状況ラインレイヤ
+            afterMap.addLayer({
+                "id": "naisui-line",
+                "type": "line",
+                "source": "pmtiles-naisui",
+                "source-layer": "N0323_230101_add_2_checkflgfgb",
+                minzoom: 1,
+                maxzoom: 23,
+                'paint': {
+                    'line-color': 'rgba(0, 48, 96, 1)',
+                    'line-width': 1,
+                }
+            });
+
+            // 内水ハザードマップ掲載状況ラベルレイヤ
+            afterMap.addLayer({
+                'id': 'naisui-label',
+                'type': 'symbol',
+                "source": "pmtiles-naisui",
+                "source-layer": "N0323_230101_add_2_checkflgfgb",
+                minzoom: 8,
+                maxzoom: 23,
+                'layout': {
+                    'text-field': ['get', 'N03_004'],
+                    'text-offset': [0, -0.6],
+                    'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+                    'text-size': 10,
+                    'text-anchor': 'top',
+                    'symbol-placement': 'point',
+                    'text-allow-overlap': false,
+                    'symbol-spacing': 1000
+                },
+                'paint': {
+                    'text-color': 'rgba(0, 0, 0, 1)',
+                    'text-halo-blur': 1,
+                    'text-halo-color': 'rgba(255, 255, 255, 1)',
+                    'text-halo-width': 2
+                }
+            });
+
+        });
+
+        // 内水ハザードマップ掲載状況ポップアップ表示
+        afterMap.on('click', 'naisui-fill', (e) => {
+            var cityname = e.features[0].properties['N03_004'];
+            var checkflg = e.features[0].properties['CheckFlg'];
+            var url = e.features[0].properties['掲載するURL'];
+
+            var linkHTML = (checkflg === 'True') ?
+                '<div><a href="' + url + '" target="_blank">リンクを開く</a></div>' :
+                '<div>-</div>';
+
+            new maplibregl.Popup()
+                .setLngLat(e.lngLat)
+                .setHTML(
+                    '<div style="font-size: 1.1em; color: black;"><strong>' + cityname + '</strong></div>' +
+                    '<div>' + '内水ハザードマップ' + '</div>' +
+                    linkHTML
+                )
+                .addTo(afterMap);
+        });
+
+        // Attributionを折りたたみ表示
+        afterMap.addControl(new maplibregl.AttributionControl({
+            compact: true,
+            customAttribution: '<a href="https://twitter.com/syanseto" target="_blank">Twitter</a> | <a href="https://github.com/shi-works/satellite-data-cog-maplibre-gl-js" target="_blank">Github</a> | <a href="https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N03-v3_1.html" target="_blank">国土数値情報 行政区域データ</a>'
+        }));
+
+        var container = "#comparison-container";
+        var map = new maplibregl.Compare(beforeMap, afterMap, container, {
+        });
+
+        // map.showTileBoundaries = true;
+
+    </script>
+</body>
+
+</html>
